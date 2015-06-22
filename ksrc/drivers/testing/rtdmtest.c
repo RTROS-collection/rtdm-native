@@ -19,7 +19,7 @@
 #include <linux/version.h>
 #include <linux/module.h>
 #include <linux/ioport.h>
-#include <asm/semaphore.h>
+#include <linux/mutex.h>
 
 #include <rtdm/rttesting.h>
 #include <rtdm/rtdm_driver.h>
@@ -29,7 +29,7 @@ struct rtdmtest_context {
 	rtdm_sem_t sem;
 	rtdm_mutex_t mutex;
 	rtdm_nrtsig_t nrtsig;
-	struct semaphore nrt_mutex;
+	struct mutex nrt_mutex;
 };
 
 static rtdm_task_t task;
@@ -41,6 +41,9 @@ static unsigned long rtdm_lock_count;
 module_param(start_index, uint, 0400);
 MODULE_PARM_DESC(start_index, "First device instance number to be used");
 #endif
+
+static int iter = 0;
+module_param(iter, int, 0644);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Wolfgang Grandegger");
@@ -54,13 +57,14 @@ static int rtdmtest_task(void *arg)
 {
 	int ret;
 	nanosecs_abs_t wakeup;
-	struct rttst_rtdmtest_config *config =
-		(struct rttst_rtdmtest_config *)arg;
+	/* struct rttst_rtdmtest_config *config = */
+	/* 	(struct rttst_rtdmtest_config *)arg; */
 
 	printk("%s: started with delay=%lld\n", __FUNCTION__, task_period);
         wakeup = rtdm_clock_read();
 
 	while (1) {
+	    iter++;
 #if 0
 		if ((ret = rtdm_task_sleep(task_period)))
 			break;
@@ -87,7 +91,7 @@ static int rtdmtest_open(struct rtdm_dev_context *context,
 	rtdm_sem_init(&ctx->sem, 0);
 	rtdm_lock_count = 0;
 	rtdm_mutex_init(&ctx->mutex);
-	init_MUTEX(&ctx->nrt_mutex);
+	mutex_init(&ctx->nrt_mutex);
 	if (rtdm_nrtsig_init(&ctx->nrtsig, rtdmtest_nrtsig_handler)) {
 	    printk("rtdm_nrtsig_init failed\n");
 	    return -EINVAL;
@@ -103,11 +107,11 @@ static int rtdmtest_close(struct rtdm_dev_context *context,
 
 	ctx = (struct rtdmtest_context *)context->dev_private;
 	printk("%s state=%#lx\n", __FUNCTION__, ctx->event.state);
-	down(&ctx->nrt_mutex);
+	mutex_lock(&ctx->nrt_mutex);
 	rtdm_event_destroy(&ctx->event);
 	rtdm_sem_destroy(&ctx->sem);
 	rtdm_mutex_destroy(&ctx->mutex);
-	up(&ctx->nrt_mutex);
+	mutex_unlock(&ctx->nrt_mutex);
 
 	return 0;
 }
@@ -293,8 +297,7 @@ static struct rtdm_device device = {
 	.proc_name         = device.device_name,
 };
 
-
-int __init __rtdmtest_init(void)
+static int __init __rtdmtest_init(void)
 {
 	int err;
 
@@ -308,10 +311,10 @@ int __init __rtdmtest_init(void)
 		start_index++;
 	} while (err == -EEXIST);
 
-	return err;
+	return err < 0 ? err : 0;
 }
 
-void __exit __rtdmtest_exit(void)
+static void __exit __rtdmtest_exit(void)
 {
 	rtdm_task_destroy(&task);
 	rtdm_task_join_nrt(&task, 100);

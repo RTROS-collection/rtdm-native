@@ -31,9 +31,6 @@
 #if defined(CONFIG_IPIPE)
 #error Adeos/I-pipe not supported
 
-#elif !defined(CONFIG_PREEMPT_RT)
-#error Real-time preemption not enabled (CONFIG_PREEMPT_RT)
-
 #else
 #ifndef CONFIG_HIGH_RES_TIMERS
 #error High-resolution timers not enabled (CONFIG_HIGH_RES_TIMERS)
@@ -41,6 +38,12 @@
 #include <rtdm/rtdm_driver_native.h>
 
 #endif
+
+typedef void (*exit_files_t)(struct task_struct *tsk);
+typedef void (*exit_fs_t)(struct task_struct *tsk);
+
+extern exit_files_t _exit_files;
+extern exit_fs_t _exit_fs;
 
 #endif /* _RTDM_DRIVER_H */
 

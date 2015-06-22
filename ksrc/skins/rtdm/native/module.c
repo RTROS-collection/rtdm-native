@@ -22,13 +22,26 @@
  */
 
 #include <linux/module.h>
+#include <rtdm/rtdm_driver.h>
 
 MODULE_DESCRIPTION("Real-Time Driver Model");
 MODULE_AUTHOR("jan.kiszka@web.de");
 MODULE_LICENSE("GPL");
 
+exit_files_t _exit_files;
+exit_fs_t _exit_fs;
+
 int __init __rtdm_init(void)
 {
+	// kludge around unexported exit_fs/exit_files functions:
+	_exit_fs = (exit_fs_t) kallsyms_lookup_name("exit_fs");
+	_exit_files = (exit_files_t) kallsyms_lookup_name("exit_files");
+
+	if (!_exit_fs || !_exit_files) {
+	    printk(KERN_ERR "RTDM: could not resolve unexported symbols\n");
+	    return -1;
+	}
+
 	printk(KERN_INFO "starting RTDM services.\n");
 	return 0;
 }

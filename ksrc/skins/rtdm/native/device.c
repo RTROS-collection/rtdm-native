@@ -43,7 +43,7 @@
 #define ANY_HANDLER(device, operation) \
 	((device).operation##_rt || (device).operation##_nrt)
 
-DECLARE_MUTEX(rtdm_dev_lock);
+DEFINE_MUTEX(rtdm_dev_lock);
 
 int rtdm_no_support(void)
 {
@@ -103,7 +103,7 @@ int rtdm_dev_register(struct rtdm_device *device)
 
 	atomic_set(&device->reserved.refcount, 0);
 
-	down(&rtdm_dev_lock);
+	mutex_lock(&rtdm_dev_lock);
 
 	if ((device->device_flags & RTDM_DEVICE_TYPE_MASK) == RTDM_NAMED_DEVICE) {
 		memcpy(&device->reserved.chrdev_ops, &rtdm_chrdev_ops,
@@ -134,7 +134,7 @@ int rtdm_dev_register(struct rtdm_device *device)
 	}
 
 out:
-        up(&rtdm_dev_lock);
+        mutex_unlock(&rtdm_dev_lock);
 	return ret;
 }
 
@@ -146,17 +146,17 @@ int rtdm_dev_unregister(struct rtdm_device *device, unsigned int poll_delay)
 	    (device->device_flags & RTDM_DEVICE_TYPE_MASK) == 0)
 		return -ENODEV;
 
-	down(&rtdm_dev_lock);
+	mutex_lock(&rtdm_dev_lock);
 
 	while (atomic_read(&device->reserved.refcount) > 0) {
-		up(&rtdm_dev_lock);
+		mutex_unlock(&rtdm_dev_lock);
 		if (!poll_delay)
 			return -EAGAIN;
 		if (unlikely(CONFIG_XENO_OPT_DEBUG_RTDM > 0))
 			printk("device %s still in use - waiting for release...\n",
 			       device->proc_name);
 		msleep(poll_delay);
-		down(&rtdm_dev_lock);
+		mutex_lock(&rtdm_dev_lock);
 	}
 	if ((device->device_flags & RTDM_DEVICE_TYPE_MASK) == RTDM_NAMED_DEVICE) {
 		unregister_chrdev(device->reserved.chrdev_major,
@@ -165,7 +165,7 @@ int rtdm_dev_unregister(struct rtdm_device *device, unsigned int poll_delay)
 		sock_unregister(device->protocol_family);
 		proto_unregister(&device->reserved.proto);
 	}
-	up(&rtdm_dev_lock);
+	mutex_unlock(&rtdm_dev_lock);
 
 	return 0;
 }

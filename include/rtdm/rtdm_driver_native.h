@@ -32,7 +32,9 @@
 #include <linux/delay.h>
 #include <linux/syscalls.h>
 #include <linux/sched.h>
-#include <asm/semaphore.h>
+#include <linux/semaphore.h>
+#include <linux/workqueue.h>
+#include <linux/kthread.h>
 #include <asm/bitops.h>
 #include <linux/net.h>
 #include <asm/errno.h>
@@ -203,7 +205,7 @@ struct rtdm_device {
 	rtdm_socket_handler_t socket_rt;
 	rtdm_socket_handler_t socket_nrt;
 	/** Protocol socket creating for RTDM over Linux */
-	int (*socket_lx)(struct socket *sock, int protocol);
+        int (*socket_lx)(struct net *net, struct socket *sock, int protocol, int kern);
 	struct rtdm_operations ops;
 	int device_class;
 	int device_sub_class;
@@ -352,7 +354,7 @@ static inline int rtdm_nrtsig_init(rtdm_nrtsig_t *nrt_sig,
 
 static inline void rtdm_nrtsig_destroy(rtdm_nrtsig_t *nrt_sig)
 {
-	work_release(nrt_sig);
+    cancel_work_sync(nrt_sig);  // XXX not sure
 }
 
 static inline void rtdm_nrtsig_pend(rtdm_nrtsig_t *nrt_sig)
@@ -392,12 +394,24 @@ int rtdm_task_init(rtdm_task_t *task, const char *name,
 
 static inline void rtdm_task_destroy(rtdm_task_t * task)
 {
+    	int ret;
 	if (rtdm_task_has_magic(task) && !task->stopped) {
+
+#if 0
 		printk("%s: sending signal to %s (pid=%d)\n",
 		       __FUNCTION__, task->linux_task->comm,
 		       task->linux_task->pid);
 		send_sig(SIGINT, task->linux_task, 1);
 		wake_up_process(task->linux_task);
+#else
+		printk("%s: stopping kthread %s (pid=%d)\n",
+		       __FUNCTION__, task->linux_task->comm,
+		       task->linux_task->pid);
+		ret = kthread_stop(task->linux_task);
+		if (ret == -EINTR)
+		    printk("%s: kthread_stop: wake_up_process was never called\n", __FUNCTION__);
+
+#endif
 	} else {
 		printk("%s: not allowed on user threads\n", __FUNCTION__);
 	}
@@ -451,8 +465,9 @@ static inline int rtdm_task_sleep(nanosecs_rel_t delay)
 	struct hrtimer_sleeper timeout;
 	hrtimer_init(&timeout.timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 	hrtimer_init_sleeper(&timeout, current);
-	timeout.timer.expires = ktime_add_ns(timeout.timer.base->get_time(),
-					     delay);
+	hrtimer_set_expires(&timeout.timer,
+			    ktime_add_ns(timeout.timer.base->get_time(),
+					 delay));
 	return _rtdm_task_sleep(&timeout);
 }
 
@@ -462,7 +477,7 @@ static inline int rtdm_task_sleep_until(nanosecs_abs_t wakeup_time)
 	ktime_t zero = ktime_set(0, 0);
 	hrtimer_init(&timeout.timer, CLOCK_REALTIME, HRTIMER_MODE_ABS);
 	hrtimer_init_sleeper(&timeout, current);
-	timeout.timer.expires = ktime_add_ns(zero, wakeup_time);
+	hrtimer_set_expires(&timeout.timer,ktime_add_ns(zero, wakeup_time));
 	return _rtdm_task_sleep(&timeout);
 }
 
@@ -483,7 +498,9 @@ static inline void rtdm_toseq_init(rtdm_toseq_t *toseq,
 {
 	hrtimer_init(&toseq->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 	hrtimer_init_sleeper(toseq, current);
-	toseq->timer.expires = ktime_add_ns(toseq->timer.base->get_time(), timeout);
+	hrtimer_set_expires(&toseq->timer,
+			    ktime_add_ns(toseq->timer.base->get_time(),
+					 timeout));
 }
 
 /*

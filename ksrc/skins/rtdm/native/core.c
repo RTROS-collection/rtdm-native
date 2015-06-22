@@ -70,8 +70,10 @@ int rtdm_socket_lx(struct socket *sock, int protocol,
 	rtdm_reference_device(device);
 	sock->ops = &device->reserved.proto_ops;
 
-	sk = sk_alloc(device->protocol_family, GFP_KERNEL,
-		      &device->reserved.proto, 1);
+	sk = sk_alloc(sock_net(sock->sk),
+		      device->protocol_family,
+		      GFP_KERNEL,
+		      &device->reserved.proto);
 	if (sk) {
 		context = (struct rtdm_dev_context *)sk;
 
@@ -193,7 +195,7 @@ int _rtdm_sock_bind(struct socket *sock,
 }
 
 int _rtdm_sock_setsockopt(struct socket *sock, int level,
-			   int optname, char __user *optval, int optlen)
+			   int optname, char __user *optval, unsigned int optlen)
 {
 	struct _rtdm_setsockopt_args args = {level, optname, optval, optlen};
         MAJOR_SOCKET_FUNCTION_WRAPPER(ioctl,  _RTIOC_SETSOCKOPT, (void *)&args);
